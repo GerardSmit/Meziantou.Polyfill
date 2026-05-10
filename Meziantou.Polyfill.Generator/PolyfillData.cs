@@ -31,7 +31,7 @@ internal sealed partial class PolyfillData
 
     public PolyfillData(string content) => Content = content;
 
-    public string? Content { get; }
+    public string Content { get; private set; }
 
     public string? XmlDocumentationId { get; private set; }
 
@@ -40,6 +40,8 @@ internal sealed partial class PolyfillData
     public string[] ConditionalMembers { get; private set; } = [];
     public string[] ConditionalSymbols { get; private set; } = [];
     public string[] PolyfillExtensionsClassNames { get; private set; } = [];
+    public string[] DeclaredCSharpSignatureKeys { get; private set; } = [];
+    public StringToReadOnlySpanCharOverload[] StringToReadOnlySpanCharOverloads { get; private set; } = [];
 
     public bool UseUnsafe { get; private set; }
     public bool UseExtensions { get; private set; }
@@ -51,8 +53,19 @@ internal sealed partial class PolyfillData
         sb.AppendLine($"RequiredTypes: {string.Join(", ", RequiredTypes)}");
         sb.AppendLine($"DeclaredMemberDocumentationIds: {string.Join(", ", DeclaredMemberDocumentationIds)}");
         sb.AppendLine($"ConditionalMembers: {string.Join(", ", ConditionalMembers)}");
+        sb.AppendLine($"StringToReadOnlySpanCharOverloads: {string.Join(", ", StringToReadOnlySpanCharOverloads.Select(overload => overload.XmlDocumentationId))}");
         sb.AppendLine($"Content:\n{Content}");
         return sb.ToString();
+    }
+
+    public void AppendStringToReadOnlySpanCharOverloads(StringToReadOnlySpanCharOverload[] overloads)
+    {
+        if (overloads.Length == 0)
+            return;
+
+        Content += "\n#if MEZIANTOU_POLYFILL_NO_STRING_TO_READONLYSPAN_CHAR_CONVERSION\n" +
+                   string.Join("\n", overloads.Select(overload => overload.Content)) +
+                   "\n#endif\n";
     }
 
     public static PolyfillData Get(CSharpCompilation compilation, string documentationDeclarationId, string content)
@@ -161,6 +174,8 @@ internal sealed partial class PolyfillData
         data.XmlDocumentationId = documentationDeclarationId;
         data.DeclaredMemberDocumentationIds = [.. declaredMethods];
         data.PolyfillExtensionsClassNames = [.. polyfillExtensionsClassNames.OrderBy(x => x, StringComparer.Ordinal)];
+        data.DeclaredCSharpSignatureKeys = [.. StringToReadOnlySpanCharOverloadGenerator.GetDeclaredCSharpSignatureKeys(compilation, semanticModel, (CompilationUnitSyntax)root)];
+        data.StringToReadOnlySpanCharOverloads = StringToReadOnlySpanCharOverloadGenerator.Generate(compilation, semanticModel, (CompilationUnitSyntax)root, documentationDeclarationId);
         data.UseExtensions = useExtensions;
         data.UseUnsafe = useUnsafe;
 

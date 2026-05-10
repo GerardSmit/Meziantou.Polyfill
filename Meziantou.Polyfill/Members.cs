@@ -42,6 +42,29 @@ internal partial struct Members
         return true;
     }
 
+    private static bool SupportsStringToReadOnlySpanCharConversion(Compilation compilation)
+    {
+        var stringType = compilation.GetSpecialType(SpecialType.System_String);
+        var charType = compilation.GetSpecialType(SpecialType.System_Char);
+        var readOnlySpanType = compilation.GetTypeByMetadataName("System.ReadOnlySpan`1");
+        if (readOnlySpanType is null)
+            return false;
+
+        var readOnlySpanOfChar = readOnlySpanType.Construct(charType);
+        foreach (var member in stringType.GetMembers(WellKnownMemberNames.ImplicitConversionName).OfType<IMethodSymbol>())
+        {
+            if (member.MethodKind == MethodKind.Conversion &&
+                member.Parameters.Length == 1 &&
+                SymbolEqualityComparer.Default.Equals(member.Parameters[0].Type, stringType) &&
+                SymbolEqualityComparer.Default.Equals(member.ReturnType, readOnlySpanOfChar))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsEmbeddedSymbol(ISymbol symbol)
     {
         if (symbol is not ITypeSymbol)

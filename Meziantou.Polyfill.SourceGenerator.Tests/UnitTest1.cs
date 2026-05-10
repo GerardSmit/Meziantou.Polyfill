@@ -199,6 +199,35 @@ public class UnitTest1
         };
     }
 
+    [Fact]
+    public async Task StringToReadOnlySpanCharOverload_IsGenerated_WhenRuntimeDoesNotSupportImplicitConversion()
+    {
+        var assemblies = new List<string>();
+        assemblies.AddRange(await NuGetHelpers.GetNuGetReferences("Microsoft.NETFramework.ReferenceAssemblies.net472", "1.0.3", ""));
+        assemblies.AddRange(await NuGetHelpers.GetNuGetReferences("System.Memory", "4.5.5", "lib/net461/"));
+
+        var result = GenerateFiles(
+            """
+            using System;
+            using System.Text;
+
+            public sealed class Test
+            {
+                public int GetBytes(Encoding encoding, string value, Span<byte> bytes)
+                {
+                    return encoding.GetBytes(value, bytes);
+                }
+            }
+            """,
+            assemblyLocations: assemblies,
+            includedPolyfills: "M:System.Text.Encoding.GetBytes(System.ReadOnlySpan{System.Char},System.Span{System.Byte})");
+
+        var content = GetGeneratedFileContent(result.GeneratorResult, "M_System.Text.Encoding.GetBytes(System.ReadOnlySpan{System.Char},System.Span{System.Byte}).g.cs");
+        Assert.Contains("#define MEZIANTOU_POLYFILL_NO_STRING_TO_READONLYSPAN_CHAR_CONVERSION", content, StringComparison.Ordinal);
+        Assert.Contains("public static int GetBytes(this Encoding target, string? chars, Span<byte> bytes)", content, StringComparison.Ordinal);
+        Assert.Contains("global::System.MemoryExtensions.AsSpan(chars)", content, StringComparison.Ordinal);
+    }
+
     [Theory]
     [MemberData(nameof(GetRuntimeWithoutByRefLikeGenericSupportLanguageVersions))]
     public async Task SpanAction_AllowsRefStructConstraint_IsNotGenerated_WhenRuntimeDoesNotSupportByRefLikeGenerics(LanguageVersion languageVersion)

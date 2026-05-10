@@ -108,6 +108,8 @@ if (duplicatePolyfills.Length > 0)
     throw new InvalidOperationException("There are duplicated polyfills:\n" + sb.ToString());
 }
 
+AppendStringToReadOnlySpanCharOverloads(polyfills);
+
 // Detect which TFMs support each polyfill, sort by earliest supported version, then reassign indices
 await DetectAndAssignVersionsAsync(polyfills, compilation, GetRootPath());
 
@@ -153,6 +155,7 @@ async Task GenerateMembers()
     sb.AppendLine($"private readonly PolyfillOptions _options;");
     sb.AppendLine($"private readonly bool _supportAllowsRefStruct;");
     sb.AppendLine($"private readonly bool _supportExtensions;");
+    sb.AppendLine($"private readonly bool _supportStringToReadOnlySpanCharConversion;");
     sb.AppendLine($"private readonly bool _supportUnsafe;");
     sb.AppendLine($"private readonly string _extraDefines;");
 
@@ -168,6 +171,7 @@ async Task GenerateMembers()
     sb.AppendLine("    var runtimeFeature = compilation.GetSpecialType(SpecialType.System_Object).ContainingAssembly.GetTypeByMetadataName(\"System.Runtime.CompilerServices.RuntimeFeature\");");
     sb.AppendLine("    _supportAllowsRefStruct = Enum.IsDefined(typeof(LanguageVersion), 1300) && languageVersion >= (LanguageVersion)1300 && (runtimeFeature?.GetMembers(\"ByRefLikeGenerics\").Length ?? 0) > 0;");
     sb.AppendLine("    _supportExtensions = Enum.IsDefined(typeof(LanguageVersion), 1400) && languageVersion >= (LanguageVersion)1400;");
+    sb.AppendLine("    _supportStringToReadOnlySpanCharConversion = SupportsStringToReadOnlySpanCharConversion(compilation);");
     sb.AppendLine("    _supportUnsafe = compilation.Options is CSharpCompilationOptions compilationOptions && compilationOptions.AllowUnsafe;");
 
     foreach (var requiredType in requiredTypes)
@@ -177,6 +181,7 @@ async Task GenerateMembers()
 
     sb.AppendLine($"    _extraDefines = \"\";");
     sb.AppendLine("    if (_supportAllowsRefStruct) _extraDefines += \"#define MEZIANTOU_POLYFILL_SUPPORT_ALLOWS_REF_STRUCT\\n\";");
+    sb.AppendLine("    if (!_supportStringToReadOnlySpanCharConversion) _extraDefines += \"#define MEZIANTOU_POLYFILL_NO_STRING_TO_READONLYSPAN_CHAR_CONVERSION\\n\";");
     sb.AppendLine("    if (_supportUnsafe) _extraDefines += \"#define MEZIANTOU_POLYFILL_SUPPORT_UNSAFE\\n\";");
     foreach (var requiredType in requiredTypes)
     {
@@ -306,6 +311,7 @@ async Task GenerateMembers()
     sb.AppendLine("{");
     sb.AppendLine("    var sb = new StringBuilder();");
     sb.AppendLine("    sb.AppendLine(_options.DumpAsCSharpComment());");
+    sb.AppendLine("    sb.AppendLine(\"// StringToReadOnlySpanCharConversion: \" + _supportStringToReadOnlySpanCharConversion);");
     foreach (var requiredType in requiredTypes)
     {
         sb.AppendLine($"    sb.AppendLine(\"// {requiredType.TypeName}: \" + {requiredType.CsharpFieldName});");
@@ -742,6 +748,26 @@ static Polyfill[] SortPolyfills(Polyfill[] items)
             return true;
 
         return false;
+    }
+}
+
+static void AppendStringToReadOnlySpanCharOverloads(Polyfill[] polyfills)
+{
+    var existingPolyfillIds = new HashSet<string>(polyfills.Select(polyfill => polyfill.TypeName), StringComparer.Ordinal);
+    var existingCSharpSignatureKeys = new HashSet<string>(polyfills.SelectMany(polyfill => polyfill.PolyfillData.DeclaredCSharpSignatureKeys), StringComparer.Ordinal);
+    var generatedOverloadIds = new HashSet<string>(StringComparer.Ordinal);
+    var generatedCSharpSignatureKeys = new HashSet<string>(StringComparer.Ordinal);
+
+    foreach (var polyfill in polyfills)
+    {
+        var overloads = polyfill.PolyfillData.StringToReadOnlySpanCharOverloads
+            .Where(overload => !existingPolyfillIds.Contains(overload.XmlDocumentationId))
+            .Where(overload => !existingCSharpSignatureKeys.Contains(overload.CSharpSignatureKey))
+            .Where(overload => generatedOverloadIds.Add(overload.XmlDocumentationId))
+            .Where(overload => generatedCSharpSignatureKeys.Add(overload.CSharpSignatureKey))
+            .ToArray();
+
+        polyfill.PolyfillData.AppendStringToReadOnlySpanCharOverloads(overloads);
     }
 }
 
